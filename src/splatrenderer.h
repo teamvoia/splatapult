@@ -35,6 +35,9 @@ public:
     // viewport = (x, y, width, height)
     void Render(const glm::mat4& cameraMat, const glm::mat4& projMat,
                 const glm::vec4& viewport, const glm::vec2& nearFar);
+    void SetWhiteBalance(float kelvin);
+    void SetExposure(float ev);
+    void SetFocalDepth(float depth, float apperture);
 public:
     uint32_t numBlocksPerWorkgroup = 1024;
 protected:

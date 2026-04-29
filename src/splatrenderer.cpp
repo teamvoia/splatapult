@@ -193,16 +193,16 @@ void SplatRenderer::Sort(const glm::mat4& cameraMat, const glm::mat4& projMat,
     }
 
     {
-        ZoneScopedNC("get-count", tracy::Color::Green);
+        //ZoneScopedNC("get-count", tracy::Color::Green);
 
-        atomicCounterBuffer->Read(atomicCounterVec);
-        sortCount = atomicCounterVec[0];
+        // atomicCounterBuffer->Read(atomicCounterVec);
+        //sortCount = atomicCounterVec[0];
 
-        assert(sortCount <= (uint32_t)numPoints);
+        //assert(sortCount <= (uint32_t)numPoints);
 
-        GL_ERROR_CHECK("SplatRenderer::Render() get-count");
+        //GL_ERROR_CHECK("SplatRenderer::Render() get-count");
     }
-
+    sortCount = static_cast<uint32_t>(posVec.size());
     if (useMultiRadixSort)
     {
         ZoneScopedNC("sort", tracy::Color::Red4);
@@ -388,4 +388,26 @@ void SplatRenderer::BuildVertexArrayObject(std::shared_ptr<GaussianCloud> gaussi
 
     splatVao->SetElementBuffer(indexBuffer);
     gaussianDataBuffer->Unbind();
+}
+
+void SplatRenderer::SetWhiteBalance(float kelvin)
+{
+    splatProg->Bind(); // Bind the program first
+    splatProg->SetUniform("white_balance_kelvin", kelvin);    
+    std::cerr << "Set white balance to " << kelvin << "K" << std::endl;
+}
+
+void SplatRenderer::SetExposure(float ev)
+{
+    splatProg->Bind(); // Bind the program first
+    splatProg->SetUniform("ev", ev);
+    std::cerr << "Set exposure to " << ev << " EV" << std::endl;
+}
+
+void SplatRenderer::SetFocalDepth(float depth, float apperture)
+{
+    splatProg->Bind(); // Bind the program first
+    splatProg->SetUniform("focal_length", depth);
+    splatProg->SetUniform("aperture", apperture);
+    std::cerr << "Set focal depth to " << depth << " and aperture to " << apperture << std::endl;
 }
