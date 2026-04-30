@@ -45,6 +45,13 @@ SplatRenderer::SplatRenderer()
 
 SplatRenderer::~SplatRenderer()
 {
+    if (readbackBuffer)
+    {
+        glBindBuffer(GL_COPY_WRITE_BUFFER, readbackBuffer);
+        glUnmapBuffer(GL_COPY_WRITE_BUFFER);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+        glDeleteBuffers(1, &readbackBuffer);
+    }	
 }
 
 bool SplatRenderer::Init(std::shared_ptr<GaussianCloud> gaussianCloud,
@@ -144,7 +151,15 @@ bool SplatRenderer::Init(std::shared_ptr<GaussianCloud> gaussianCloud,
 
     atomicCounterVec.resize(1, 0);
     atomicCounterBuffer = std::make_shared<BufferObject>(GL_ATOMIC_COUNTER_BUFFER, atomicCounterVec, GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT);
+    glGenBuffers(1, &readbackBuffer);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, readbackBuffer);
 
+    const GLbitfield flags = GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+    glBufferStorage(GL_COPY_WRITE_BUFFER, sizeof(uint32_t), nullptr, flags);
+
+    readbackPtr = static_cast<uint32_t*>(
+        glMapBufferRange(GL_COPY_WRITE_BUFFER, 0, sizeof(uint32_t), flags)
+    );    
     GL_ERROR_CHECK("SplatRenderer::Init() end");
 
     return true;
@@ -167,6 +182,13 @@ void SplatRenderer::Sort(const glm::mat4& cameraMat, const glm::mat4& projMat,
     //const uint32_t MAX_DEPTH = useMultiRadixSort ? 16777215 : std::numeric_limits<uint32_t>::max();
     const uint32_t NUM_BYTES = 4;
     const uint32_t MAX_DEPTH = std::numeric_limits<uint32_t>::max();
+    {
+        ZoneScopedNC("get-count-async", tracy::Color::Green);
+        uint32_t observed = *readbackPtr;
+        sortCount = (observed > 0 && observed <= numPoints)
+                    ? std::min<uint32_t>(observed + observed / 20, (uint32_t)numPoints)
+                    : (uint32_t)numPoints;
+    }
 
     {
         ZoneScopedNC("pre-sort", tracy::Color::Red4);
@@ -176,7 +198,6 @@ void SplatRenderer::Sort(const glm::mat4& cameraMat, const glm::mat4& projMat,
         preSortProg->SetUniform("nearFar", nearFar);
         preSortProg->SetUniform("keyMax", MAX_DEPTH);
 
-        // reset counter back to zero
         atomicCounterVec[0] = 0;
         atomicCounterBuffer->Update(atomicCounterVec);
 
@@ -191,23 +212,15 @@ void SplatRenderer::Sort(const glm::mat4& cameraMat, const glm::mat4& projMat,
 
         GL_ERROR_CHECK("SplatRenderer::Sort() pre-sort");
     }
-
-    {
-        //ZoneScopedNC("get-count", tracy::Color::Green);
-
-        // atomicCounterBuffer->Read(atomicCounterVec);
-        //sortCount = atomicCounterVec[0];
-
-        //assert(sortCount <= (uint32_t)numPoints);
-
-        //GL_ERROR_CHECK("SplatRenderer::Render() get-count");
-    }
-    sortCount = static_cast<uint32_t>(posVec.size());
+    glBindBuffer(GL_COPY_READ_BUFFER, atomicCounterBuffer->GetObj());
+    glBindBuffer(GL_COPY_WRITE_BUFFER, readbackBuffer);
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER,
+                        0, 0, sizeof(uint32_t));
     if (useMultiRadixSort)
     {
         ZoneScopedNC("sort", tracy::Color::Red4);
 
-        const uint32_t NUM_ELEMENTS = static_cast<uint32_t>(sortCount);
+        const uint32_t NUM_ELEMENTS = sortCount;
         const uint32_t NUM_WORKGROUPS = (NUM_ELEMENTS + numBlocksPerWorkgroup - 1) / numBlocksPerWorkgroup;
 
         sortProg->Bind();

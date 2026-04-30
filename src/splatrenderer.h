@@ -67,4 +67,10 @@ protected:
     uint32_t sortCount;
     bool isFramebufferSRGBEnabled;
     bool useRgcSortOverride;
+    // Persistent-mapped atomic counter for non-blocking readback.
+    // The GPU writes the cull count each frame; we read whatever was
+    // last written (1-2 frames stale, which is invisible).
+    uint32_t  readbackBuffer = 0;
+    uint32_t* readbackPtr   = nullptr;
+    uint32_t  lastFrameSortCount     = 0;    
 };
